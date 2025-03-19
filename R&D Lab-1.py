@@ -1,10 +1,7 @@
-import os
 import socket
 import subprocess
 import sys
 import ctypes
-from PIL import Image
-import io
 
 # Function to check if the script is running with administrative privileges
 def is_admin():
