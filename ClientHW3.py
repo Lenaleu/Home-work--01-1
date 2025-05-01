@@ -11,7 +11,7 @@ import sys
 import time
 
 # Configuration settings
-SERVER_IP = "192.168.19.139"  # Change this to your server IP
+SERVER_IP = "192.168.19.123"  # Server IP address on subnet 192.168.19.0/24
 SERVER_PORT = 8080            # Change this to your desired port
 RECONNECT_DELAY = 30          # Seconds to wait before reconnection attempts
 

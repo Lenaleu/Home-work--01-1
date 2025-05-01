@@ -71,16 +71,21 @@ Commands:
     print(help_text)
 
 
-def start_server(host="192.168.19.139", port=8080):
+def start_server(host="0.0.0.0", port=8080):
     """
     Start the server and handle client connections.
     
     Args:
-        host: Interface to listen on (192.168.19.139 for all interfaces)
+        host: Interface to listen on (0.0.0.0 for all interfaces)
         port: Port number to listen on
+        
+    Note:
+        Server expects connections from subnet 192.168.19.0/24
+        Server IP is configured as 192.168.19.123
     """
     print_banner()
     print(f"[+] Starting server on {host}:{port}...")
+    print(f"[+] Server IP address: 192.168.19.123/24")
     
     try:
         # Create socket with timeout
