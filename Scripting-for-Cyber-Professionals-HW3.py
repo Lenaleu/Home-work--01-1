@@ -20,7 +20,7 @@ import argparse
 def connect():
     print("[+] Starting server on port 8080...")
     server_socket = socket.socket()
-    server_socket.bind(("192.168.19.123", 8080))
+    server_socket.bind((args.host, args.port))
     server_socket.listen(1)
     connection, address = server_socket.accept()
     print(f"[+] Connection from {address}")
