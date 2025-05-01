@@ -71,12 +71,12 @@ Commands:
     print(help_text)
 
 
-def start_server(host="0.0.0.0", port=8080):
+def start_server(host="192.168.19.123", port=8080):
     """
     Start the server and handle client connections.
     
     Args:
-        host: Interface to listen on (0.0.0.0 for all interfaces)
+        host: Interface to listen on (default: 192.168.19.123)
         port: Port number to listen on
         
     Note:
@@ -251,7 +251,7 @@ def handle_connection(connection):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Remote Access Server - Educational Demo")
     parser.add_argument("-p", "--port", type=int, default=8080, help="Port to listen on (default: 8080)")
-    parser.add_argument("--host", default="0.0.0.0", help="Interface to listen on (default: 0.0.0.0)")
+    parser.add_argument("--host", default="192.168.19.123", help="Interface to listen on (default: 192.168.19.123)")
     
     args = parser.parse_args()
     start_server(host=args.host, port=args.port)
