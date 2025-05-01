@@ -31,6 +31,7 @@ def connect():
                 
             if command == "terminate":
                 connection.send("terminate".encode())
+                connection.close()
                 break
                 
             # Handle file upload
