@@ -6,7 +6,7 @@ import platform
 import base64
 import shutil
 import winreg
-from PIL import ImageGrab
+from PIL import ImageGrab # type: ignore
 
 
 def add_to_registry():
