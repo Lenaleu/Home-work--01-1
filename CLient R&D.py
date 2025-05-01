@@ -13,7 +13,7 @@ def check_admin():
 
 def connect():
     client = socket.socket()
-    server_ip = "192.168.83.128"
+    server_ip = "192.168.19.139"
     server_port = 8080
     
     try:
