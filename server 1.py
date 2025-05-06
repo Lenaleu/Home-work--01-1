@@ -72,7 +72,7 @@ def doGrab(conn, userinput,operation):
 def amalan():
     mysocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     mysocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    mysocket.bind(("10.0.0.178",8080))
+    mysocket.bind(("10.3.131.213",8080))
     mysocket.listen(1)
     print("[+]  Listening for connections...")
 
