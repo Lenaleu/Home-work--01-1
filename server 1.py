@@ -34,7 +34,7 @@ def doSend(mysocket, sourcePath, destinationPath, fileName):
 def doGrab(conn, userinput,operation):
     try:
         conn.send(userinput.encode())  # Send command to client
-        path = "/home/amalan/Desktop/grabamalan/"
+        path = "/home/kali/Desktop/"
         # Ensure the directory exists
         os.makedirs(path, exist_ok=True)
 
